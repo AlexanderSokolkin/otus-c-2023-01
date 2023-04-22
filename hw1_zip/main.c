@@ -20,7 +20,7 @@ int main(int argc, char* argv[])
 	}
 
 	size_t js = jpegSize(f);
-	if (isJpegZip(f, js)) {
+	if (js > 0 && isJpegZip(f, js)) {
 		printf("File %s is jpegzip. Zip files:\n", argv[1]);
 		printZipFiles(f, js);
 	}
