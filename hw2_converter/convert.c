@@ -168,7 +168,7 @@ static int convertFromCP1251(FILE* t_src_file, FILE* t_dst_file)
 	return 1;
 }
 
-static int convertFromKOI8(FILE* t_src_file, FILE* t_dst_file)
+static int convert(FILE* t_src_file, FILE* t_dst_file, const uint32_t* t_code_table)
 {
 	uint8_t src_buf[1024];
 	uint8_t dst_buf[1024];
@@ -182,37 +182,7 @@ static int convertFromKOI8(FILE* t_src_file, FILE* t_dst_file)
 				++dst_count;
 			}
 			else {
-				dst_count += convertPoint(koi8_table[ch - 0x80], &dst_buf[dst_count]);
-			}
-			if (dst_count >= 1020) {
-				fwrite(dst_buf, sizeof(dst_buf[0]), dst_count, t_dst_file);
-				dst_count = 0;
-			}
-		}
-	}
-
-	if (dst_count) {
-		fwrite(dst_buf, sizeof(dst_buf[0]), dst_count, t_dst_file);
-	}
-
-	return 1;
-}
-
-static int convertFromISO88595(FILE* t_src_file, FILE* t_dst_file)
-{
-	uint8_t src_buf[1024];
-	uint8_t dst_buf[1024];
-	uint16_t dst_count = 0;
-	while (!feof(t_src_file)) {
-		size_t count = fread(src_buf, sizeof(src_buf[0]), 1024, t_src_file);
-		for (size_t i = 0; i < count; ++i) {
-			uint8_t ch = src_buf[i];
-			if (ch < 0x80) {
-				dst_buf[dst_count] = ch;
-				++dst_count;
-			}
-			else {
-				dst_count += convertPoint(iso88595_table[ch - 0x80], &dst_buf[dst_count]);
+				dst_count += convertPoint(t_code_table[ch - 0x80], &dst_buf[dst_count]);
 			}
 			if (dst_count >= 1020) {
 				fwrite(dst_buf, sizeof(dst_buf[0]), dst_count, t_dst_file);
@@ -248,10 +218,10 @@ int convertToUTF8(const char* t_src_file, Codec t_codec, const char* t_dst_file)
 			res = convertFromCP1251(src_f, dst_f);
 			break;
 		case KOI8:
-			res = convertFromKOI8(src_f, dst_f);
+			res = convert(src_f, dst_f, koi8_table);
 			break;
 		case ISO88595:
-			res = convertFromISO88595(src_f, dst_f);
+			res = convert(src_f, dst_f, iso88595_table);
 			break;
 		default:
 			break;
