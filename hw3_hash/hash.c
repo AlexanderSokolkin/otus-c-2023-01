@@ -8,7 +8,7 @@
 
 
 #define INVALID_INDEX -1
-#define M 1024 // максимальный размер ключа
+#define M 32 // максимальный размер ключа
 #define MAX_CAP_INDEX 29
 static int cap[MAX_CAP_INDEX] = {
 	5, 11, 23, 47, 97, 193, 389, 769, 1543, 3079,
@@ -18,7 +18,7 @@ static int cap[MAX_CAP_INDEX] = {
 	402653189, 805306457, 1610612711, 2147483629
 };
 
-static const int P1 = 53;
+static const int P1 = 37;
 static const int P2 = 17;
 static long long p1_pow[M];
 static long long p2_pow[M];
@@ -53,7 +53,7 @@ static void getIndexAndInterval(struct _Hash* t_hash, const char* t_str, int* t_
 	uint64_t sh1 = 0;
 	uint64_t sh2 = 0;
 	for (int i = 0; t_str[i] != '\0'; ++i) {
-		int s = abs(t_str[i]) - 'a' + 1;
+		int s = abs(t_str[i] - 'a') + 1;
 		sh1 += s * p1_pow[i];
 		sh2 += s * p2_pow[i];
 	}

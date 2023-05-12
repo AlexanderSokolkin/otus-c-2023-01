@@ -1,6 +1,7 @@
 #include "utils.h"
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 
 
 ArgsSet parseArgs(int argc, char* argv[])
@@ -34,6 +35,14 @@ bool checkFileContains(const char* t_filename)
 	return true;
 }
 
+void strToLower(char* t_str)
+{
+	int i = 0;
+	while (t_str[i] != '\0') {
+		t_str[i] = tolower(t_str[i]);
+		++i;
+	}
+}
 
 bool readFile(const char* t_filename, hash t_hash)
 {
@@ -42,11 +51,17 @@ bool readFile(const char* t_filename, hash t_hash)
 		return false;
 	}
 
-	char buf[1024];
+	char sep[] = ",.!?:;*()-[]{}«»|\"\'\\/";
+	char buf[64];
 	while (fscanf(f, "%s", buf) != EOF) {
-		int* v = hashValue(t_hash, buf);
-		if (v != NULL) {
-			++(*v);
+		char* istr = strtok(buf, sep);
+		while (istr != NULL) {
+			strToLower(istr);
+			int* v = hashValue(t_hash, istr);
+			if (v != NULL) {
+				++(*v);
+			}
+			istr = strtok(NULL, sep);
 		}
 	}
 
