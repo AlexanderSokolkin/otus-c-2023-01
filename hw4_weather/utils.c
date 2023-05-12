@@ -2,8 +2,10 @@
 #include "cjson/cJSON.h"
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <curl/curl.h>
+
 
 
 ArgsSet parseArgs(int argc, char* argv[])
@@ -29,12 +31,29 @@ void printHelp()
 }
 
 
-
+typedef enum {
+	JSON_PARSE_OK,
+	JSON_PARSE_INVALID_CITY,
+	JSON_PARSE_ERROR
+} JSON_PARSE_RESULT;
 
 struct MemoryStruct {
 	char* data;
 	size_t size;
 };
+
+static bool isEquals(const char* t_str1, const char* t_str2)
+{
+	int i = 0;
+	while (t_str1[i] != '\0' || t_str2[i] != '\0') {
+		if (tolower(t_str1[i]) != tolower(t_str2[i])) {
+			return false;
+		}
+		++i;
+	}
+	return t_str1[i] == '\0' && t_str2[i] == '\0';
+}
+
 
 static size_t writeMemoryCallback(void* t_contents, size_t t_size, size_t t_nmemb, void* t_userp)
 {
@@ -54,13 +73,53 @@ static size_t writeMemoryCallback(void* t_contents, size_t t_size, size_t t_nmem
 	return realsize;
 }
 
-static bool parseData(struct MemoryStruct* t_mem, char* t_buf)
+
+static JSON_PARSE_RESULT parseData(struct MemoryStruct* t_mem, const char* t_city, char* t_buf)
 {
-	bool res = false;
+	JSON_PARSE_RESULT res = JSON_PARSE_ERROR;
 	cJSON* json = cJSON_Parse(t_mem->data);
 	if (json == NULL) {
-		return false;
+		return JSON_PARSE_ERROR;
 	}
+
+	cJSON* nearest_area = cJSON_GetObjectItemCaseSensitive(json, "nearest_area");
+	if (nearest_area == NULL || cJSON_IsInvalid(nearest_area)) {
+		goto fault;
+	}
+	cJSON* nearest_area0 = cJSON_GetArrayItem(nearest_area, 0);
+	if (nearest_area0 == NULL || cJSON_IsInvalid(nearest_area0)) {
+		goto fault;
+	}
+	cJSON* area_name_array = cJSON_GetObjectItemCaseSensitive(nearest_area0, "areaName");
+	if (area_name_array == NULL || cJSON_IsInvalid(area_name_array)) {
+		goto fault;
+	}
+	cJSON* area_name_elem = NULL;
+	bool correct_city = false;
+	int counter = 0;
+	cJSON_ArrayForEach(area_name_elem, area_name_array) {
+		cJSON* city = cJSON_GetObjectItemCaseSensitive(area_name_elem, "value");
+		if (city != NULL && cJSON_IsString(city)) {
+			if (isEquals(city->valuestring, t_city)) {
+				correct_city = true;
+				break;
+			}
+			if (counter) {
+				strcat(t_buf, ", ");
+			}
+			strcat(t_buf, city->valuestring);
+		}
+		else {
+			goto fault;
+		}
+		++counter;
+	}
+	if (!correct_city) {
+		res = JSON_PARSE_INVALID_CITY;
+		goto fault;
+	}
+
+
 	cJSON* cc = cJSON_GetObjectItemCaseSensitive(json, "current_condition");
 	if (cc == NULL || cJSON_IsInvalid(cc)) {
 		goto fault;
@@ -104,7 +163,7 @@ static bool parseData(struct MemoryStruct* t_mem, char* t_buf)
 		goto fault;
 	}
 	cJSON* weather_desc_elem = NULL;
-	int counter = 0;
+	counter = 0;
 	cJSON_ArrayForEach(weather_desc_elem, weather_desc_array) {
 		tmp_val = cJSON_GetObjectItemCaseSensitive(weather_desc_elem, "value");
 		if (tmp_val != NULL && cJSON_IsString(tmp_val)) {
@@ -124,7 +183,7 @@ static bool parseData(struct MemoryStruct* t_mem, char* t_buf)
 					"\nwind direction - %s"
 					"\nwind speed - %s km/h\n",
 					desc, temp_C, wind_dir, wind_speed);
-	res = true;
+	res = JSON_PARSE_OK;
 
 fault:
 	cJSON_Delete(json);
@@ -134,16 +193,22 @@ fault:
 
 bool printWeather(const char* t_region)
 {
-	curl_global_init(CURL_GLOBAL_ALL);
+	if (curl_global_init(CURL_GLOBAL_ALL) != CURLE_OK) {
+		return false;
+	}
 
 	bool result = false;
 	CURL* handle;
 	CURLcode res;
 
+	handle = curl_easy_init();
+	if (handle == NULL) {
+		return false;
+	}
+
 	struct MemoryStruct chunk;
 	chunk.data = NULL;
 	chunk.size = 0;
-	handle = curl_easy_init();
 	char url[512];
 	sprintf(url, "https://wttr.in/%s?format=j1", t_region);
 	curl_easy_setopt(handle, CURLOPT_URL, url);
@@ -155,14 +220,27 @@ bool printWeather(const char* t_region)
 		printf("failed to connect to the server - %s\n", curl_easy_strerror(res));
 		goto fault;
 	}
-
-	char buf[1024];
-	if (!parseData(&chunk, buf)) {
-		printf("failed to parse server response\n");
+	long response_code;
+	res = curl_easy_getinfo(handle, CURLINFO_RESPONSE_CODE, &response_code);
+	if (res != CURLE_OK && response_code != 200) {
+		printf("Failed to get data from server\n");
 		goto fault;
 	}
-	printf("%s", buf);
-	result = true;
+
+	char buf[1024] = "\0";
+	switch (parseData(&chunk, t_region, buf)) {
+		case JSON_PARSE_OK:
+			printf("%s", buf);
+			result = true;
+			break;
+		case JSON_PARSE_INVALID_CITY:
+			printf("Invalid region entered. Maybe you mean: %s\n", buf);
+			goto fault;
+		case JSON_PARSE_ERROR:
+		default:
+			printf("failed to parse server response\n");
+			goto fault;
+	}
 
 fault:
 	free(chunk.data);
